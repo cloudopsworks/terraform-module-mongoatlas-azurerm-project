@@ -1,12 +1,12 @@
-name: Terraform Transit Gateway Module
+name: Terraform MongoDB Atlas Project Module for Azure
 #logo: logo/logo.jpg
 badges:
   - name: Latest Release
-    image: https://img.shields.io/github/release/<owner/repo>.svg?style=for-the-badge
-    url: https://github.com/<owner/repo>/releases/latest
+    image: https://img.shields.io/github/release/cloudopsworks/terraform-module-mongoatlas-azurerm-project.svg?style=for-the-badge
+    url: https://github.com/cloudopsworks/terraform-module-mongoatlas-azurerm-project/releases/latest
   - name: Last Updated
-    image: https://img.shields.io/github/last-commit/<owner/repo>.svg?style=for-the-badge
-    url: https://github.com/<owner/repo>/commits
+    image: https://img.shields.io/github/last-commit/cloudopsworks/terraform-module-mongoatlas-azurerm-project.svg?style=for-the-badge
+    url: https://github.com/cloudopsworks/terraform-module-mongoatlas-azurerm-project/commits
 
 license: "APACHE2"
 
@@ -15,23 +15,293 @@ copyrights:
     url: "https://cloudopsworks.co"
     year: "2026"
 
-github_repo: <owner/repo>
+github_repo: cloudopsworks/terraform-module-mongoatlas-azurerm-project
 
 description: |-
-  <description>
+  Terraform module that provisions a MongoDB Atlas project with Azure Resource Manager integration.
+  It wraps the generic [terraform-module-mongoatlas-project](https://github.com/cloudopsworks/terraform-module-mongoatlas-project)
+  and extends it with Azure Key Vault (KMS) support for encryption at rest, including automated
+  cloud provider access setup and Atlas service principal key permission management.
 
 # Introduction to the project
 introduction: |-
-#  This is an introduction.
+  This module creates and manages a MongoDB Atlas project optionally backed by Azure Key Vault
+  encryption at rest. When `settings.encryption_at_rest.enabled` is `true`, the module:
+
+  - Creates an Azure Key Vault in the specified resource group and region.
+  - Generates an RSA (or EC) key for Atlas encryption.
+  - Configures the Atlas cloud provider access setup (Azure application + service principal)
+    via the embedded generic module.
+  - Grants the Atlas service principal the required key permissions automatically — no manual
+    Azure AD application registration is needed.
+  - Passes the Key Vault and key identifiers to the Atlas encryption-at-rest configuration.
+
+  The Atlas project name is derived from the organization / environment / spoke hierarchy and
+  an optional region suffix, following the Cloud Ops Works naming convention. This can be
+  overridden with an explicit `name` or `name_prefix` variable.
+
+  **Required providers:**
+
+  | Provider | Version constraint |
+  |---|---|
+  | `hashicorp/azurerm` | `~> 4.59` |
+  | `mongodb/mongodbatlas` | `~> 2.1` |
+
+  **Minimum Terraform version:** `>= 1.7`
+
+  **Outputs:**
+
+  | Output | Description |
+  |---|---|
+  | `project_name` | Name of the created Atlas project |
+  | `project_id` | ID of the created Atlas project |
+  | `project_creation_timestamp` | Creation timestamp of the Atlas project |
+  | `project_backup_policy_id` | Backup policy ID (when configured) |
+  | `project_kms_key_vault_id` | Azure Key Vault resource ID (when encryption enabled) |
+  | `project_kms_key_vault_name` | Azure Key Vault name (when encryption enabled) |
+  | `project_kms_key_id` | Azure Key Vault key ID (when encryption enabled) |
+  | `project_kms_atlas_app_id` | Atlas Azure application ID from cloud provider access setup |
+  | `project_kms_atlas_service_principal_id` | Atlas Azure service principal object ID |
+  | `encryption_at_rest_id` | Encryption at rest configuration ID |
+  | `imported_alert_statement` | Generated import statement for alerts (when generate_import=true) |
+  | `imported_alert_json` | Generated import JSON for alerts (when generate_import=true) |
 
 # How to use this project
 usage: |-
+  ### Basic usage — auto-named project, no encryption
+
+  ```hcl
+  # terragrunt.hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-mongoatlas-azurerm-project.git//?ref=master"
+  }
+
+  locals {
+    local_vars = yamldecode(file("inputs.yaml"))
+  }
+
+  include "root" {
+    path = find_in_parent_folders()
+  }
+
+  inputs = merge(
+    local.local_vars,
+    {
+      org = {
+        organization_name = "myorg"
+        organization_unit = "platform"
+        environment_name  = "dev"
+        environment_type  = "development"
+      }
+    }
+  )
+  ```
+
+  ```yaml
+  # inputs.yaml
+  name_prefix: ""
+  name: ""
+  organization_name: "MyAtlasOrg"   # (Optional) Atlas org name for lookup
+  organization_id: ""                # (Optional) Atlas org ID; takes precedence over name
+  region: "eastus2"                  # (Optional) Azure region; used for KV location
+  generate_import: false
+
+  settings:
+    default_alerts_settings: true
+    collect_database_specifics_statistics_enabled: true
+    data_explorer_enabled: true
+    extended_storage_sizes_enabled: false
+    performance_advisor_enabled: true
+    schema_advisor_enabled: true
+    encryption_at_rest:
+      enabled: false
+  ```
+
+  ---
+
+  ### Usage with Azure Key Vault encryption at rest
+
+  ```yaml
+  # inputs.yaml
+  name_prefix: ""
+  name: "my-atlas-project"           # (Optional) Explicit project name
+  organization_name: "MyAtlasOrg"
+  organization_id: ""
+  region: "eastus2"
+  generate_import: false
+
+  settings:
+    default_alerts_settings: true
+    collect_database_specifics_statistics_enabled: true
+    data_explorer_enabled: true
+    extended_storage_sizes_enabled: false
+    performance_advisor_enabled: true
+    schema_advisor_enabled: true
+    encryption_at_rest:
+      enabled: true
+      resource_group_name: "rg-mongodb-encryption"  # (Required) Resource group for Key Vault
+      key_vault_name: ""                             # (Optional) Auto-generated when empty
+      azure_environment: "AZURE"                     # (Optional) "AZURE" | "AZURE_CHINA" | "AZURE_GERMANY" | "AZURE_US_GOVERNMENT"
+      soft_delete_retention_days: 7                  # (Optional) 7–90 days
+      purge_protection_enabled: true                 # (Optional) Recommended for production
+      key_type: "RSA"                                # (Optional) "RSA" | "EC"
+      key_size: 2048                                 # (Optional) RSA: 2048 | 3072 | 4096
+      key_opts:                                      # (Optional) Allowed key operations
+        - decrypt
+        - encrypt
+        - sign
+        - unwrapKey
+        - verify
+        - wrapKey
+  ```
+
+  ---
+
+  ### Variable reference
+
+  | Variable | Type | Required | Description | Default |
+  |---|---|---|---|---|
+  | `name_prefix` | `string` | No | Prefix prepended to auto-generated project name | `""` |
+  | `name` | `string` | No | Explicit Atlas project name; overrides `name_prefix` | `""` |
+  | `organization_name` | `string` | No | Atlas organization name for org-ID lookup | `""` |
+  | `organization_id` | `string` | No | Direct Atlas organization ID; takes precedence over name lookup | `""` |
+  | `region` | `string` | No | Azure region for Key Vault deployment (e.g. `eastus2`) | `""` |
+  | `generate_import` | `bool` | No | Generate OpenTofu import blocks for existing Atlas resources | `false` |
+  | `settings` | `any` | No | Settings object — see sub-keys below | `{}` |
+
+  #### `settings` sub-keys
+
+  | Key | Type | Required | Description | Default |
+  |---|---|---|---|---|
+  | `default_alerts_settings` | `bool` | No | Apply Atlas default alert configurations | `true` |
+  | `collect_database_specifics_statistics_enabled` | `bool` | No | Collect database-specific statistics | `true` |
+  | `data_explorer_enabled` | `bool` | No | Enable the Atlas Data Explorer UI | `true` |
+  | `extended_storage_sizes_enabled` | `bool` | No | Enable extended storage sizes for cluster tiers | `false` |
+  | `performance_advisor_enabled` | `bool` | No | Enable the Atlas Performance Advisor | `true` |
+  | `schema_advisor_enabled` | `bool` | No | Enable the Atlas Schema Advisor | `true` |
+  | `backup_compliance` | `object` | No | Backup compliance policy — see upstream module | `{}` |
+  | `maintenance` | `object` | No | Maintenance window configuration — see upstream module | `{}` |
+  | `access_list` | `object` | No | IP access list configuration — see upstream module | `{}` |
+  | `alerts` | `list` | No | Alert configurations list — see upstream module | `[]` |
+  | `encryption_at_rest.enabled` | `bool` | No | Enable Azure Key Vault encryption at rest | `false` |
+  | `encryption_at_rest.resource_group_name` | `string` | **Yes** (when enabled) | Azure resource group for the Key Vault | — |
+  | `encryption_at_rest.key_vault_name` | `string` | No | Key Vault name (max 24 chars); auto-generated when empty | `""` |
+  | `encryption_at_rest.azure_environment` | `string` | No | Azure cloud environment: `AZURE`, `AZURE_CHINA`, `AZURE_GERMANY`, `AZURE_US_GOVERNMENT` | `"AZURE"` |
+  | `encryption_at_rest.soft_delete_retention_days` | `number` | No | Soft-delete retention days (7–90) | `7` |
+  | `encryption_at_rest.purge_protection_enabled` | `bool` | No | Enable purge protection (irreversible during retention period) | `true` |
+  | `encryption_at_rest.key_type` | `string` | No | Key type: `RSA` or `EC` | `"RSA"` |
+  | `encryption_at_rest.key_size` | `number` | No | RSA key size in bits: `2048`, `3072`, `4096` (ignored for EC keys) | `2048` |
+  | `encryption_at_rest.key_opts` | `list(string)` | No | Allowed key operations | `["decrypt","encrypt","sign","unwrapKey","verify","wrapKey"]` |
 
 # Example usage
 examples: |-
+  #### Minimal example — auto-named project, no encryption
+
+  ```hcl
+  # terragrunt.hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-mongoatlas-azurerm-project.git//?ref=master"
+  }
+
+  include "root" {
+    path = find_in_parent_folders()
+  }
+
+  inputs = {
+    organization_name = "MyAtlasOrg"
+    region            = "eastus2"
+    settings = {
+      default_alerts_settings = true
+    }
+  }
+  ```
+
+  ---
+
+  #### Full example — named project with encryption at rest and custom alerts
+
+  ```hcl
+  # terragrunt.hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-mongoatlas-azurerm-project.git//?ref=master"
+  }
+
+  locals {
+    local_vars = yamldecode(file("inputs.yaml"))
+  }
+
+  include "root" {
+    path = find_in_parent_folders()
+  }
+
+  inputs = merge(
+    local.local_vars,
+    {
+      org = {
+        organization_name = "acmecorp"
+        organization_unit = "platform"
+        environment_name  = "prod"
+        environment_type  = "production"
+      }
+      extra_tags = {
+        CostCenter = "engineering"
+        Team       = "platform"
+      }
+    }
+  )
+  ```
+
+  ```yaml
+  # inputs.yaml
+  name_prefix: ""
+  name: "acme-platform-prod"
+  organization_name: ""
+  organization_id: "64abc1234def567890abcdef"
+  region: "eastus2"
+  generate_import: false
+
+  settings:
+    default_alerts_settings: true
+    collect_database_specifics_statistics_enabled: true
+    data_explorer_enabled: true
+    extended_storage_sizes_enabled: false
+    performance_advisor_enabled: true
+    schema_advisor_enabled: true
+    encryption_at_rest:
+      enabled: true
+      resource_group_name: "rg-mongodb-encryption-prod"
+      key_vault_name: ""
+      azure_environment: "AZURE"
+      soft_delete_retention_days: 90
+      purge_protection_enabled: true
+      key_type: "RSA"
+      key_size: 4096
+      key_opts:
+        - decrypt
+        - encrypt
+        - sign
+        - unwrapKey
+        - verify
+        - wrapKey
+  ```
 
 # How to get started quickly
 quickstart: |-
+  1. Ensure Terraform >= 1.7 and Terragrunt are installed.
+  2. Configure the `azurerm` provider via `ARM_*` environment variables or `az login`.
+  3. Configure the `mongodbatlas` provider:
+     ```sh
+     export MONGODB_ATLAS_PUBLIC_KEY="<your-public-key>"
+     export MONGODB_ATLAS_PRIVATE_KEY="<your-private-key>"
+     ```
+  4. Copy `.boilerplate/inputs.yaml` to your deployment directory and populate required values.
+  5. Create a `terragrunt.hcl` referencing this module (see Usage section).
+  6. Run:
+     ```sh
+     terragrunt init
+     terragrunt plan
+     terragrunt apply
+     ```
 
 include:
   - "docs/targets.md"
