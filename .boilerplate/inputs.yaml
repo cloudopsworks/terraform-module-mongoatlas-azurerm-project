@@ -1,1 +1,146 @@
-# Module configuration
+##
+# (c) 2021-2026
+#     Cloud Ops Works LLC - https://cloudops.works/
+#     Find us on:
+#       GitHub: https://github.com/cloudopsworks
+#       WebSite: https://cloudops.works
+#     Distributed Under Apache v2.0 License
+#
+# Per-deployment configuration loaded by terragrunt.hcl as local.local_vars.
+#
+# Only module-specific variables are listed here. The following are supplied
+# automatically by the Terragrunt hierarchy and MUST NOT be added:
+#   - is_hub     → injected by the boilerplate/template engine
+#   - spoke_def  → sourced from spoke-inputs.yaml
+#   - org        → sourced from env-inputs.yaml
+#   - extra_tags → built from merged tag files
+#
+
+# (Optional) Prefix prepended to the auto-generated project name when `name` is not set.
+# The auto-generated name follows the pattern: <org_unit>-<env_name>-<env_type>[-<region_short>]
+# Default: ""
+name_prefix: ""
+
+# (Optional) Explicit name for the MongoDB Atlas project.
+# When set, this value overrides name_prefix and the auto-generated name entirely.
+# Default: ""
+name: ""
+
+# (Optional) Name of the MongoDB Atlas organization.
+# Used to look up the organization ID when organization_id is not provided.
+# Default: ""
+organization_name: ""
+
+# (Optional) Direct MongoDB Atlas organization ID.
+# Takes precedence over organization_name lookup.
+# Example: "64abc1234def567890abcdef"
+# Default: ""
+organization_id: ""
+
+# (Optional) Azure region where Key Vault resources are deployed.
+# Required when settings.encryption_at_rest.enabled is true.
+# The input region string is mapped to a short code for resource naming
+# (e.g., "eastus2" → "eus2", "westeurope" is not in the map and produces "").
+# Valid examples: "eastus", "eastus2", "westus", "westus2", "westus3",
+#   "northcentralus", "southcentralus", "centralus", "westcentralus",
+#   "canadacentral", "canadaeast", "brazilsouth", "brazilsoutheast",
+#   "uksouth", "ukwest", "francecentral", "francesouth",
+#   "germanywestcentral", "germanynorth", "switzerlandnorth", "switzerlandwest",
+#   "norwayeast", "norwaywest", "swedencentral", "polandcentral",
+#   "japaneast", "japanwest", "australiaeast", "australiasoutheast",
+#   "australiacentral", "australiacentral2", "southeastasia", "eastasia",
+#   "centralindia", "southindia", "koreacentral", "koreasouth", "uaenorth", "uaecentral"
+# Default: "" (eastus is used as fallback when encryption is enabled)
+region: ""
+
+# (Optional) When true, generates OpenTofu import blocks for existing Atlas resources.
+# Useful for importing pre-existing Atlas projects into Terraform state without recreation.
+# Default: false
+generate_import: false
+
+# (Optional) Module settings controlling Atlas project features and Azure KMS integration.
+# All sub-keys are optional unless noted as (Required).
+settings:
+  # (Optional) Apply Atlas default alert configurations to the project. Default: true
+  default_alerts_settings: true
+
+  # (Optional) Enable collection of database-specific statistics. Default: true
+  collect_database_specifics_statistics_enabled: true
+
+  # (Optional) Enable the Atlas Data Explorer UI for browsing collections. Default: true
+  data_explorer_enabled: true
+
+  # (Optional) Enable extended storage sizes for cluster tiers. Default: false
+  extended_storage_sizes_enabled: false
+
+  # (Optional) Enable the Atlas Performance Advisor for query optimization suggestions. Default: true
+  performance_advisor_enabled: true
+
+  # (Optional) Enable the Atlas Schema Advisor for schema improvement recommendations. Default: true
+  schema_advisor_enabled: true
+
+  # (Optional) Backup compliance policy settings.
+  # See https://github.com/cloudopsworks/terraform-module-mongoatlas-project for full schema.
+  # backup_compliance: {}
+
+  # (Optional) Maintenance window configuration (day of week, hour of day, auto-defer).
+  # See https://github.com/cloudopsworks/terraform-module-mongoatlas-project for full schema.
+  # maintenance: {}
+
+  # (Optional) IP access list configuration (CIDR blocks or AWS security groups).
+  # See https://github.com/cloudopsworks/terraform-module-mongoatlas-project for full schema.
+  # access_list: {}
+
+  # (Optional) Alert configurations list (metric thresholds, notification channels, etc.).
+  # See https://github.com/cloudopsworks/terraform-module-mongoatlas-project for full schema.
+  # alerts: []
+
+  # (Optional) Azure Key Vault encryption at rest configuration.
+  encryption_at_rest:
+    # (Optional) Enable Azure Key Vault encryption at rest for all Atlas cluster data. Default: false
+    enabled: false
+
+    # (Required when enabled=true) Azure resource group name that will contain the Key Vault.
+    # The Terraform operator identity must have permission to create resources in this group.
+    # Example: "rg-mongodb-encryption"
+    resource_group_name: ""
+
+    # (Optional) Azure Key Vault name. Maximum 24 characters.
+    # When empty, auto-generated as "mdbatlas-<system_name_short>-kv".
+    # Must be globally unique within Azure. Default: ""
+    key_vault_name: ""
+
+    # (Optional) Azure cloud environment for the Atlas encryption-at-rest integration.
+    # The module passes this value directly to the Atlas API (uppercase).
+    # Valid values: "AZURE" | "AZURE_CHINA" | "AZURE_GERMANY" | "AZURE_US_GOVERNMENT"
+    # Default: "AZURE"
+    azure_environment: "AZURE"
+
+    # (Optional) Number of days the Key Vault and its objects are retained after soft-deletion.
+    # Range: 7–90. Default: 7
+    soft_delete_retention_days: 7
+
+    # (Optional) Enable purge protection on the Key Vault.
+    # WARNING: Once enabled, purge protection cannot be disabled for the soft_delete_retention_days period.
+    # Strongly recommended for production to prevent accidental permanent deletion. Default: true
+    purge_protection_enabled: true
+
+    # (Optional) Key Vault key type used for Atlas encryption.
+    # Valid values: "RSA" | "EC"
+    # Default: "RSA"
+    key_type: "RSA"
+
+    # (Optional) RSA key size in bits. Ignored when key_type is "EC".
+    # Valid values: 2048 | 3072 | 4096
+    # Default: 2048
+    key_size: 2048
+
+    # (Optional) Allowed cryptographic operations for the Key Vault key.
+    # Default: ["decrypt", "encrypt", "sign", "unwrapKey", "verify", "wrapKey"]
+    key_opts:
+      - decrypt
+      - encrypt
+      - sign
+      - unwrapKey
+      - verify
+      - wrapKey
