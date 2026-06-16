@@ -358,7 +358,7 @@ Available targets:
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | ~> 4.59 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 4.68.0 |
 
 ## Modules
 
